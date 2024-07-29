@@ -39,12 +39,11 @@ test "test scalar distance" {
 }
 
 const System = struct {
-    particles: [3]*Particle,
     elements: std.ArrayList(*Particle),
     allocator: std.mem.Allocator,
 
-    pub fn init(particles: [3]*Particle, allocator: std.mem.Allocator) System {
-        return System{ .particles = particles, .elements = std.ArrayList(*Particle).init(allocator), .allocator = allocator };
+    pub fn init(allocator: std.mem.Allocator) System {
+        return System{ .elements = std.ArrayList(*Particle).init(allocator), .allocator = allocator };
     }
 
     pub fn deinit(self: System) void {
@@ -56,13 +55,13 @@ const System = struct {
     }
 
     pub fn iterate(self: *System) void {
-        for (self.particles, 0..) |_, i| {
-            for (self.particles, 0..) |_, j| {
+        for (self.elements.items, 0..) |_, i| {
+            for (self.elements.items, 0..) |_, j| {
                 if (i == j) {
                     continue;
                 }
-                const particle: *Particle = self.particles[i];
-                const other: *Particle = self.particles[j];
+                const particle: *Particle = self.elements.items[i];
+                const other: *Particle = self.elements.items[j];
                 const distance: @Vector(2, f32) = particle.distanceToParticle(other);
                 const scalarDistanceVector: @Vector(2, f32) = @splat(math.pow(f32, particle.scalarDistanceToParticle(other), 3));
                 const acc: @Vector(2, f32) = G * other.mass * distance / scalarDistanceVector;
@@ -72,8 +71,8 @@ const System = struct {
         }
     }
 
-    pub fn getParticles(self: System) [3]*Particle {
-        return self.particles;
+    pub fn getParticles(self: System) []*Particle {
+        return self.elements.items;
     }
 };
 
@@ -84,8 +83,7 @@ pub fn main() !void {
     var p1 = Particle{ .position = Screen_center, .mass = [2]f32{ 1_000_000_000, 1_000_000_000 } };
     var p2 = Particle{ .position = [2]i32{ 0, 0 }, .velocity = [2]f32{ 0.005, 0 }, .mass = [2]f32{ 500_000_000, 500000000 } };
     var p3 = Particle{ .position = [2]i32{ Screen_width, 0 }, .velocity = [2]f32{ 0, 0.005 }, .mass = [2]f32{ 500_000_000, 500000000 } };
-    const particles = [3]*Particle{ &p1, &p2, &p3 };
-    var system = System.init(particles, allocator);
+    var system = System.init(allocator);
     defer system.deinit();
     try system.addParticle(&p1);
     try system.addParticle(&p2);
