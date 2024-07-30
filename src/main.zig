@@ -4,13 +4,17 @@ const rl = @import("raylib");
 
 const Screen_width = 1920;
 const Screen_height = 1080;
+const Screen_size = [2]f32{ Screen_width, Screen_height };
+const Zero_vector = [2]f32{ 0, 0 };
 const Screen_center = [2]i32{ Screen_width / 2, Screen_height / 2 };
 const G: @Vector(2, f32) = @splat(6.6743 * math.pow(f32, 10, -11));
 
 const Particle = struct {
+    id: u8 = 0,
     position: @Vector(2, f32) = @Vector(2, f32){ 0, 0 },
     velocity: @Vector(2, f32) = @Vector(2, f32){ 0, 0 },
     mass: @Vector(2, f32) = @Vector(2, f32){ 0, 0 },
+    hidden: bool = false,
 
     pub fn distanceToParticle(self: *Particle, other: *Particle) @Vector(2, f32) {
         return other.*.position - self.*.position;
@@ -47,11 +51,16 @@ const System = struct {
     }
 
     pub fn deinit(self: System) void {
+        for (self.elements.items) |particle| {
+            self.allocator.destroy(particle);
+        }
         self.elements.deinit();
     }
 
-    pub fn addParticle(self: *System, particle: *Particle) !void {
-        try self.elements.append(particle);
+    pub fn addParticle(self: *System, position: @Vector(2, f32), velocity: @Vector(2, f32), mass: @Vector(2, f32)) !void {
+        const particle = try self.*.allocator.create(Particle);
+        particle.* = Particle{ .position = position, .velocity = velocity, .mass = mass };
+        try self.*.elements.append(particle);
     }
 
     pub fn iterate(self: *System) void {
@@ -66,6 +75,11 @@ const System = struct {
                 const scalarDistanceVector: @Vector(2, f32) = @splat(math.pow(f32, particle.scalarDistanceToParticle(other), 3));
                 const acc: @Vector(2, f32) = G * other.mass * distance / scalarDistanceVector;
                 particle.*.position += particle.*.velocity;
+                if (@reduce(.Or, particle.*.position > Screen_size) or @reduce(.Or, particle.*.position < Zero_vector)) {
+                    particle.*.hidden = true;
+                } else {
+                    particle.*.hidden = false;
+                }
                 particle.*.velocity += acc;
             }
         }
@@ -80,14 +94,8 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer std.debug.assert(gpa.deinit() == .ok);
-    var p1 = Particle{ .position = Screen_center, .mass = [2]f32{ 1_000_000_000, 1_000_000_000 } };
-    var p2 = Particle{ .position = [2]i32{ 0, 0 }, .velocity = [2]f32{ 0.005, 0 }, .mass = [2]f32{ 500_000_000, 500000000 } };
-    var p3 = Particle{ .position = [2]i32{ Screen_width, 0 }, .velocity = [2]f32{ 0, 0.005 }, .mass = [2]f32{ 500_000_000, 500000000 } };
     var system = System.init(allocator);
     defer system.deinit();
-    try system.addParticle(&p1);
-    try system.addParticle(&p2);
-    try system.addParticle(&p3);
 
     rl.initWindow(Screen_width, Screen_height, "2-Body Simulation");
     defer rl.closeWindow();
@@ -96,8 +104,17 @@ pub fn main() !void {
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.white);
+
+        if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
+            const ballPosition = rl.getMousePosition();
+            try system.addParticle([2]f32{ ballPosition.x, ballPosition.y }, [2]f32{ 0, 0 }, [2]f32{ 1_000_000_000, 1_000_000_000 });
+
+            std.debug.print("\n", .{});
+        }
         for (system.getParticles()) |particle| {
-            rl.drawCircle(@intFromFloat(particle.*.position[0]), @intFromFloat(particle.*.position[1]), 5, rl.Color.dark_gray);
+            if (!particle.*.hidden) {
+                rl.drawCircle(@intFromFloat(particle.*.position[0]), @intFromFloat(particle.*.position[1]), 5, rl.Color.dark_gray);
+            }
         }
         system.iterate();
     }
